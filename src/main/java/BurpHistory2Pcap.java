@@ -16,7 +16,7 @@ public class BurpHistory2Pcap implements BurpExtension, ContextMenuItemsProvider
 
     @Override
     public void initialize(MontoyaApi api) {
-        burpFrame = api.userInterface().swingUtils().suiteFrame();
+        this.burpFrame = api.userInterface().swingUtils().suiteFrame();
         api.extension().setName("BurpHistory2Pcap");
         api.userInterface().registerContextMenuItemsProvider(this);
     }
@@ -70,7 +70,7 @@ public class BurpHistory2Pcap implements BurpExtension, ContextMenuItemsProvider
         panel.add(checkboxPanel, BorderLayout.SOUTH);
 
         int result = JOptionPane.showConfirmDialog(
-                burpFrame,
+                this.burpFrame,
                 panel,
                 "Save PCAP",
                 JOptionPane.OK_CANCEL_OPTION
@@ -95,15 +95,14 @@ public class BurpHistory2Pcap implements BurpExtension, ContextMenuItemsProvider
                     filename, writeOptions.forcePort80(), writeOptions.resolveHostnames())) {
                 writer.writeEntries(selected);
                 JOptionPane.showMessageDialog(
-                        burpFrame,
+                        this.burpFrame,
                         "PCAP saved: " + filename,
                         "Export complete",
                         JOptionPane.INFORMATION_MESSAGE
                 );
-            }
-            catch (UnsatisfiedLinkError | Exception ex) {
+            } catch (Throwable ex) {
                 JOptionPane.showMessageDialog(
-                        burpFrame,
+                        this.burpFrame,
                         "Export failed: " + ex,
                         "Error",
                         JOptionPane.ERROR_MESSAGE

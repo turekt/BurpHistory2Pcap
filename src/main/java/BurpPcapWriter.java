@@ -1,15 +1,14 @@
 import burp.api.montoya.http.HttpService;
 import burp.api.montoya.http.handler.TimingData;
 import burp.api.montoya.http.message.HttpRequestResponse;
-import org.pcap4j.core.PcapDumper;
-import org.pcap4j.core.PcapHandle;
-import org.pcap4j.core.Pcaps;
 import org.pcap4j.packet.*;
 import org.pcap4j.packet.namednumber.*;
 import org.pcap4j.util.MacAddress;
 
+import java.io.DataOutputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.net.*;
-import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -23,18 +22,21 @@ public class BurpPcapWriter implements AutoCloseable {
     private static final String SERVER_IP4_ADDRESS = "127.0.0.2";
     private static final String CLIENT_IP6_ADDRESS = "::1";
     private static final String UNKNOWN_IP4_ADDRESS = "192.0.2.123";
+    // libpcap DataLinkType.EN10MB = 1 (Ethernet)
+    private static final int DLT_EN10MB = 1;
+    // PCAP magic + version 2.4 + snaplen 65535 + linktype EN10MB
+    private static final int SNAPLEN = 65535;
 
-    private final PcapHandle handle;
-    private final PcapDumper dumper;
+    private final DataOutputStream out;
     private final boolean forcePort80;
     private final boolean useRealIPs;
     private final AtomicInteger pktCounter;
 
     public BurpPcapWriter(String filename, boolean usePort80, boolean useRealIPs) throws Exception {
-        this.handle = Pcaps.openDead(DataLinkType.EN10MB, 65535);
-        this.dumper = handle.dumpOpen(filename);
-        this.forcePort80 = usePort80;
+        this.out = new DataOutputStream(new FileOutputStream(filename));
+        writePcapHeader();
         this.pktCounter = new AtomicInteger(0);
+        this.forcePort80 = usePort80;
         this.useRealIPs = useRealIPs;
     }
 
@@ -63,6 +65,16 @@ public class BurpPcapWriter implements AutoCloseable {
             // TCP teardown
             writeTeardown(client, server, serverSeq, clientSeq, ts);
         }
+    }
+
+    private void writePcapHeader() throws IOException {
+        out.writeInt(0xa1b2c3d4);          // magic number
+        out.writeShort(2);                 // version major
+        out.writeShort(4);                 // version minor
+        out.writeInt(0);                   // thiszone
+        out.writeInt(0);                   // sigfigs
+        out.writeInt(SNAPLEN);
+        out.writeInt(DLT_EN10MB);
     }
 
     private int writePacketsChunked(Endpoint src, Endpoint dst, byte[] data, int srcSeq, int dstSeq, Instant ts) throws Exception {
@@ -94,11 +106,16 @@ public class BurpPcapWriter implements AutoCloseable {
         write(packet(TcpFlag.ACK, server, client, serverSeq + 1, clientSeq + 1, null), ts);
     }
 
-    private void write(Packet packet, Instant ts) throws Exception {
-        dumper.dump(packet, Timestamp.from(ts.plusMillis(pktCounter.getAndIncrement())));
+    private void write(byte[] packet, Instant ts) throws Exception {
+        Instant packetTs = ts.plusMillis(pktCounter.getAndIncrement());
+        out.writeInt((int) packetTs.getEpochSecond());
+        out.writeInt(packetTs.getNano() / 1000);
+        out.writeInt(packet.length);
+        out.writeInt(packet.length);
+        out.write(packet);
     }
 
-    private Packet packet(TcpFlag flag, Endpoint src, Endpoint dst, int seq, int ack, byte[] payload) throws UnknownHostException {
+    private byte[] packet(TcpFlag flag, Endpoint src, Endpoint dst, int seq, int ack, byte[] payload) throws UnknownHostException {
         TcpPacket.Builder tcpBuilder = new TcpPacket.Builder()
                 .payloadBuilder(payload == null ? null : new UnknownPacket.Builder().rawData(payload))
                 .srcAddr(src.inetSocketAddress().getAddress())
@@ -172,7 +189,7 @@ public class BurpPcapWriter implements AutoCloseable {
                 .type(type)
                 .payloadBuilder(ipBuilder)
                 .paddingAtBuild(true);
-        return etherBuilder.build();
+        return etherBuilder.build().getRawData();
     }
 
     private BurpEntryData determineEntryData(int entryIdx, HttpRequestResponse entry) {
@@ -206,9 +223,9 @@ public class BurpPcapWriter implements AutoCloseable {
     }
 
     @Override
-    public void close() {
-        dumper.close();
-        handle.close();
+    public void close() throws IOException {
+        out.flush();
+        out.close();
     }
 
     enum TcpFlag {

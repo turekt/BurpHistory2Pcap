@@ -3,10 +3,6 @@
 A [burp2pcap](https://github.com/turekt/burp2pcap) script implemented as a Burp extension.
 BurpHistory2Pcap exports selected traffic directly from Burp HTTP History tab into a PCAP file.
 
-## Requirements
-
-To generate a PCAP file with this extension, <ins>libpcap must be installed</ins> on the system.
-
 ## Build
 
 Requirements to build the extension:
